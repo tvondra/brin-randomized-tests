@@ -14,6 +14,14 @@ rangesize=`psql $DBNAME -t -A -c "select (1 + random() * 127)::int"`
 nrows=$ROWS
 nqueries=$QUERIES
 
+# update 0.5% and insert 5%
+updatefrac=0.005
+ninsertfrac=0.05
+
+# trigger summarization of ranges and/or new values in ~5%
+summarize_all_prob=0.05
+summarize_new_prob=0.05
+
 # 1GB
 maxvalue=`psql $DBNAME -t -A -c "select (1 + random() * 1000000000)::int"`
 
@@ -24,6 +32,7 @@ echo "maxvalue $maxvalue"
 psql $DBNAME -c "create table t (a pg_lsn) with (fillfactor = $fillfactor)";
 psql $DBNAME -c "insert into t select random_lsn(p_length := $maxvalue) from generate_series(1,$nrows) s(i)";
 psql $DBNAME -c "create index on t using brin (a pg_lsn_minmax_multi_ops) with (pages_per_range = $rangesize)";
+psql $DBNAME -c "analyze t"
 
 psql $DBNAME -t -A -c "select a from t order by random() limit $nqueries" > lsn.txt 2>&1;
 
@@ -115,6 +124,33 @@ EOF
         echo "FAILED"; exit 1;
     fi
 
+    # how many rows to insert? random value between 0 and (2 * ninsertfrac)
+    # so that the average is ninsertfrac
+    ninsert=`psql -t -A $DBNAME -c "select (random() * (2 * $ninsertfrac * $nrows))::int"`
+    psql $DBNAME -c "insert into t select random_lsn(p_length := $maxvalue) from generate_series(1,$ninsert) s(i)";
+
+    # now do random update
+    psql $DBNAME -c "update t set a = random_lsn(p_length := $maxvalue) where random() < $updatefrac";
+
+    summarize_new=`psql -t -A $DBNAME -c "select random() < $summarize_all_prob"`
+
+    if [ "$summarize_new" == "t" ]; then
+        echo "summarize new"
+        psql -t -A $DBNAME -c "select  brin_summarize_new_values('t_a_idx')"
+    fi
+
+    summarize_all=`psql -t -A $DBNAME -c "select random() < $summarize_new_prob"`
+
+    if [ "$summarize_all" == "t" ]; then
+        echo "summarize all"
+        psql -a -A $DBNAME -c "analyze t"
+        psql -t -A $DBNAME <<EOF
+with x as (select relpages from pg_class where relname = 't'),
+y as (select brin_summarize_range('t_a_idx', i) from generate_series(0, (select relpages from x)) s(i))
+select count(*) from y
+EOF
+    fi
+
 done < lsn.txt
 
 for i in `seq 1 $nqueries`; do
@@ -149,6 +185,33 @@ EOF
 
     if [ "$s" != "$b" ]; then
         echo "FAILED"; exit 1;
+    fi
+
+    # how many rows to insert? random value between 0 and (2 * ninsertfrac)
+    # so that the average is ninsertfrac
+    ninsert=`psql -t -A $DBNAME -c "select (random() * (2 * $ninsertfrac * $nrows))::int"`
+    psql $DBNAME -c "insert into t select random_lsn(p_length := $maxvalue) from generate_series(1,$ninsert) s(i)";
+
+    # now do random update
+    psql $DBNAME -c "update t set a = random_lsn(p_length := $maxvalue) where random() < $updatefrac";
+
+    summarize_new=`psql -t -A $DBNAME -c "select random() < $summarize_all_prob"`
+
+    if [ "$summarize_new" == "t" ]; then
+        echo "summarize new"
+        psql -t -A $DBNAME -c "select  brin_summarize_new_values('t_a_idx')"
+    fi
+
+    summarize_all=`psql -t -A $DBNAME -c "select random() < $summarize_new_prob"`
+
+    if [ "$summarize_all" == "t" ]; then
+        echo "summarize all"
+        psql -a -A $DBNAME -c "analyze t"
+        psql -t -A $DBNAME <<EOF
+with x as (select relpages from pg_class where relname = 't'),
+y as (select brin_summarize_range('t_a_idx', i) from generate_series(0, (select relpages from x)) s(i))
+select count(*) from y
+EOF
     fi
 
 done
