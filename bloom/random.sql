@@ -199,3 +199,29 @@ begin
 
 end;
 $$ language plpgsql;
+
+create or replace function macaddr_increment(p_macaddr text, p_delta int) returns macaddr as $$
+declare
+    v_macaddr text;
+begin
+    v_macaddr := to_hex(('x' || lpad(p_macaddr, 16, '0'))::bit(64)::bigint + p_delta);
+    if length(v_macaddr) < 12 then
+        v_macaddr := repeat('0', 12 - length(v_macaddr)) || v_macaddr;
+    end if;
+
+    return v_macaddr::macaddr;
+end;
+$$ language plpgsql;
+
+create or replace function macaddr8_increment(p_macaddr text, p_delta int) returns macaddr8 as $$
+declare
+    v_macaddr text;
+begin
+    v_macaddr := to_hex(('x' || lpad(p_macaddr, 16, '0'))::bit(64)::bigint + p_delta);
+    if length(v_macaddr) < 12 then
+        v_macaddr := repeat('0', 16 - length(v_macaddr)) || v_macaddr;
+    end if;
+
+    return v_macaddr::macaddr8;
+end;
+$$ language plpgsql;

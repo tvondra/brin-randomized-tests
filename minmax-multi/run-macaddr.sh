@@ -77,7 +77,7 @@ EOF
 
     v=`psql -t -A $DBNAME -c "select replace('$v', ':', '')"`
 
-    x=`psql -t -A $DBNAME -c "select to_hex(x'$v'::bigint + 1)::macaddr"`
+    x=`psql -t -A $DBNAME -c "select macaddr_increment('$v', 1)"`
 
     psql -t -A $DBNAME >> seqscan-$suffix.log 2>&1 <<EOF
 set enable_bitmapscan = off;
@@ -105,7 +105,7 @@ EOF
         echo "FAILED"; exit 1;
     fi
 
-    x=`psql -t -A $DBNAME -c "select to_hex(x'$v'::bigint - 1)::macaddr"`
+    x=`psql -t -A $DBNAME -c "select macaddr_increment('$v', -1)"`
 
     psql -t -A $DBNAME >> seqscan-$suffix.log 2>&1 <<EOF
 set enable_bitmapscan = off;
@@ -168,7 +168,7 @@ for i in `seq 1 $nqueries`; do
         echo "FAILED"; exit 1;
     fi
 
-    v=`psql -t -A $DBNAME -c "select substr(md5(random()::text),1,12)::macaddr"`
+    v=`psql -t -A $DBNAME -c "select random_macaddr('$prefix')"`
 
     psql -t -A $DBNAME >> seqscan-$suffix.log 2>&1 <<EOF
 set enable_bitmapscan = off;
